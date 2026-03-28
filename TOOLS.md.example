@@ -1,0 +1,113 @@
+# TOOLS.md
+# Copy this file to TOOLS.md and fill in your values.
+# TOOLS.md is gitignored — it contains local environment config.
+
+## GitHub Task Board
+
+Repo: `<GITHUB_ORG>/<ISSUES_REPO>`
+
+### Labels (workflow)
+| Label | Meaning | Ray's action |
+|-------|---------|--------------|
+| `idea` | Not ready | Ignore |
+| `ready` | Matt approved — pick up | Move to `in-progress`, act |
+| `in-progress` | Being worked on | Monitor |
+| `in-review` | PR open, waiting Matt | Notify Matt |
+| `feedback` | Matt gave feedback | Pick back up, move to `in-progress` |
+| `accepted` | Done | Matt sets this |
+
+### Check the board (use this exact command — label filter is broken in older gh)
+```bash
+gh issue list --repo <GITHUB_ORG>/<ISSUES_REPO> \
+  --json number,title,body,labels,updatedAt \
+  | python3 -c "
+import json, sys
+issues = json.load(sys.stdin)
+actionable = [i for i in issues if any(l['name'] in ['ready','feedback'] for l in i['labels'])]
+stale = [i for i in issues if any(l['name'] == 'in-progress' for l in i['labels'])]
+print('=== READY/FEEDBACK ===')
+for i in actionable:
+    labels = [l['name'] for l in i['labels']]
+    print(f\"  #{i['number']} [{','.join(labels)}] {i['title']}\")
+print('=== IN PROGRESS ===')
+for i in stale:
+    print(f\"  #{i['number']} {i['title']} (updated: {i['updatedAt'][:10]})\")
+"
+```
+
+### Move a label
+```bash
+gh issue edit <n> --repo <GITHUB_ORG>/<ISSUES_REPO> \
+  --remove-label <old> --add-label <new>
+```
+
+### Add a comment
+```bash
+gh issue comment <n> --repo <GITHUB_ORG>/<ISSUES_REPO> --body "<text>"
+```
+
+## Dev (Coding Agent)
+Ray never writes code. Delegate to Dev by running Claude Code in the relevant workspace directory.
+
+Handoff format:
+```
+Dev, implement [feature] on feat/[branch].
+
+Repo: <GITHUB_ORG>/[repo]
+Base: main → Your branch: feat/[branch]
+GitHub Issue: #[n]
+Model: claude-sonnet-4-6
+
+1. Pull fresh from main
+2. Create branch
+3. Implement + tests
+4. PR against main, link issue #[n], send URL
+```
+
+## Slack (Uplink)
+Notification target: `<SLACK_CHANNEL_NAME>` (channel ID: `<SLACK_CHANNEL_ID>`)
+Auth managed by Claude.ai — no local credentials needed.
+
+---
+
+# Tools Directory
+
+External tools live in `tools/<name>/`. Each is a cloned repo. Re-clone via setup if missing.
+
+## Attractor (Kinetic)
+
+**Location:** `tools/attractor/`
+**Repo:** `<GITHUB_ORG>/attractor`
+**Role:** Kinetic — DOT-based pipeline execution engine
+
+**Setup (if missing):**
+```bash
+cd tools && git clone git@github.com:<GITHUB_ORG>/attractor.git && cd attractor && npm install
+```
+
+**Usage:**
+```
+tools/attractor/attractor <pipeline.dot> [options]
+
+Options:
+  --dir <path>            Target project directory (default: cwd)
+  --workspaces-dir <path> Attractor workspaces dir (default: .attractor/workspaces)
+  --context key=value     Seed pipeline context (repeat for multiple)
+  --sandbox               macOS only — DO NOT USE on Linux (see note below)
+```
+
+**Example:**
+```bash
+tools/attractor/attractor workspaces/my-project/pipelines/coding-task.dot \
+  --dir workspaces/my-project \
+  --context task_id=42 \
+  --context task_title="Fix login bug"
+```
+
+**Linux sandbox note:**
+`--sandbox` uses macOS `sandbox-exec` — omit it on Linux. Currently runs as `LocalExecutionEnvironment` (no sandboxing). Linux sandboxing via `firejail` is a future Kinetic task.
+
+**Help:**
+```bash
+tools/attractor/attractor
+```

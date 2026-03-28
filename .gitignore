@@ -21,6 +21,18 @@ yarn-error.log*
 # Workspaces — local project dirs, not checked in
 workspaces/
 
+# Tools — cloned external repos, re-clone via setup
+tools/attractor/
+
+# Forge runtime state — changes every run, not versioned
+forge/uplink/inbox.json
+forge/axon/registry.json
+forge/anvil/integrations.json
+.attractor/
+
+# Local config (copy from *.example and fill in)
+TOOLS.md
+
 # Credentials and secrets
 .env
 .env.*

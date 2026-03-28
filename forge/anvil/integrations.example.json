@@ -1,0 +1,23 @@
+[
+  {
+    "name": "github",
+    "type": "gh-cli",
+    "health_check_cmd": "gh auth status",
+    "last_checked": null,
+    "status": "unknown"
+  },
+  {
+    "name": "slack",
+    "type": "claude-ai-mcp",
+    "health_check_cmd": "mcp__claude_ai_Slack__slack_read_channel",
+    "last_checked": null,
+    "status": "unknown"
+  },
+  {
+    "name": "attractor",
+    "type": "local-tool",
+    "health_check_cmd": "tools/attractor/attractor",
+    "last_checked": null,
+    "status": "unknown"
+  }
+]
