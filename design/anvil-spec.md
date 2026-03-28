@@ -26,12 +26,21 @@ Array of integration objects:
 ```
 {
   "name":             "<integration name>",
-  "type":             "<gh-cli | claude-ai-mcp | mcp-server>",
+  "type":             "<gh-cli | claude-ai-mcp | mcp-server | local-tool>",
   "health_check_cmd": "<shell command that exits 0 if healthy>",
   "last_checked":     "<ISO 8601 or null>",
   "status":           "<healthy | degraded | failed | unknown>"
 }
 ```
+
+**Type vocabulary:**
+
+| Type | Description |
+|------|-------------|
+| `gh-cli` | GitHub CLI — local binary, manages its own credentials |
+| `claude-ai-mcp` | MCP server via Claude.ai — auth managed by Claude.ai, not Forge |
+| `mcp-server` | Self-hosted or third-party MCP server with local credentials |
+| `local-tool` | Local binary or script with no external auth — health check is invocation test |
 
 **Outputs:**
 - Updated `last_checked` and `status` in `integrations.json` after each health check
