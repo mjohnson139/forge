@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 class RepoScaffoldTest(unittest.TestCase):
@@ -14,7 +15,12 @@ class RepoScaffoldTest(unittest.TestCase):
 
 
 from forge.axon.registry import load_registry
-from forge.axon.runtime import build_claude_command, render_crontab_line
+from forge.axon.runtime import (
+    build_claude_command,
+    install_crontab,
+    merge_managed_crontab,
+    render_crontab_line,
+)
 
 
 class RegistryRuntimeTest(unittest.TestCase):
@@ -66,6 +72,39 @@ class RegistryRuntimeTest(unittest.TestCase):
         self.assertTrue(line.startswith("*/30 * * * * flock -n "))
         self.assertIn(".axon-board-check.lock", line)
         self.assertIn("bash -lc", line)
+
+    def test_merge_managed_crontab_replaces_existing_forge_block(self) -> None:
+        existing = "\n".join(
+            [
+                "MAILTO=\"\"",
+                "# forge-axon:start",
+                "old line",
+                "# forge-axon:end",
+                "@daily echo keep",
+            ]
+        )
+
+        merged = merge_managed_crontab(existing=existing, managed_lines=["*/30 * * * * echo fresh"])
+
+        self.assertIn("MAILTO=\"\"", merged)
+        self.assertIn("*/30 * * * * echo fresh", merged)
+        self.assertNotIn("old line", merged)
+        self.assertIn("@daily echo keep", merged)
+
+    def test_install_crontab_passes_merged_content_to_crontab_command(self) -> None:
+        calls: list[tuple[list[str], str]] = []
+
+        def runner(cmd: list[str], **kwargs: object):
+            calls.append((cmd, kwargs["input"]))  # type: ignore[index]
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        install_crontab(
+            crontab_text="MAILTO=\"\"\n# forge-axon:start\nline\n# forge-axon:end\n",
+            runner=runner,
+        )
+
+        self.assertEqual(calls[0][0], ["crontab", "-"])
+        self.assertIn("# forge-axon:start", calls[0][1])
 
     def test_load_registry_rejects_duplicate_job_names(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -169,3 +208,22 @@ class AxonCliTest(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("schedule", result.stderr)
+
+    def test_apply_crontab_requires_explicit_yes_flag(self) -> None:
+        repo_root = pathlib.Path(__file__).resolve().parents[2]
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "forge.axon.cli",
+                "apply-crontab",
+                "--registry",
+                str(repo_root / "forge" / "axon" / "registry.json"),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--yes-apply", result.stderr)

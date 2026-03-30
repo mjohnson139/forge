@@ -8,7 +8,7 @@ import uuid
 
 from forge.axon.lens import append_history_entry
 from forge.cortex.brief import assemble_brief, brief_to_context_flags
-from forge.uplink.slack import build_failure_message, build_heartbeat_message
+from forge.uplink.slack import SlackNotifier, build_failure_message, build_heartbeat_message
 
 
 Dispatcher = Callable[[Path, str, dict[str, Any]], subprocess.CompletedProcess[str]]
@@ -37,7 +37,7 @@ class CortexRuntime:
         self.pipeline_service = pipeline_service
         self.memory_store = memory_store
         self.dispatcher = dispatcher or dispatch_attractor
-        self.notifier = notifier or (lambda _message: None)
+        self.notifier = notifier or SlackNotifier(repo_root=self.repo_root).notify
 
     def heartbeat(self) -> HeartbeatResult:
         tool_statuses = [self.pipeline_service.healthcheck()]

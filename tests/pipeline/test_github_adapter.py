@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
+import pathlib
+import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 from forge.pipeline.github_adapter import GitHubIssueAdapter
 from forge.pipeline.service import PipelineService, NormalizedTask
@@ -105,3 +109,27 @@ class PipelineServiceTest(unittest.TestCase):
 
         self.assertEqual([task.id for task in listed], ["gh-1", "gh-2"])
 
+    def test_detects_task_repo_from_tools_md(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = pathlib.Path(tmp)
+            (repo_root / "TOOLS.md").write_text(
+                "# TOOLS.md\n\n## GitHub Task Board\n\nRepo: `mjohnson139/forge-tasks`\n",
+                encoding="utf-8",
+            )
+
+            service = PipelineService(repo_root=str(repo_root))
+
+        self.assertEqual(service.adapter.repo, "mjohnson139/forge-tasks")
+
+    def test_env_task_repo_overrides_tools_md(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repo_root = pathlib.Path(tmp)
+            (repo_root / "TOOLS.md").write_text(
+                "# TOOLS.md\n\n## GitHub Task Board\n\nRepo: `mjohnson139/forge-tasks`\n",
+                encoding="utf-8",
+            )
+
+            with mock.patch.dict(os.environ, {"FORGE_GITHUB_TASK_REPO": "override/tasks"}, clear=False):
+                service = PipelineService(repo_root=str(repo_root))
+
+        self.assertEqual(service.adapter.repo, "override/tasks")
