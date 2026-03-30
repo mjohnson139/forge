@@ -133,12 +133,14 @@ class MemoryStore:
         self.failures_path.touch(exist_ok=True)
 
     def load_runs(self) -> list[RunRecord]:
+        self.ensure_layout()
         payload = _load_json(self.runs_path, default=[])
         if not isinstance(payload, list):
             raise ValueError("runs.json must contain a JSON array")
         return [RunRecord.from_mapping(item) for item in payload]
 
     def write_runs(self, runs: Sequence[RunRecord]) -> None:
+        self.ensure_layout()
         self.runs_path.write_text(
             json.dumps([run.to_dict() for run in runs], indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
@@ -171,6 +173,7 @@ class MemoryStore:
         return sorted(matches, key=lambda run: run.updated_at)[-1]
 
     def load_task_memory(self, task_id: str) -> dict[str, Any] | None:
+        self.ensure_layout()
         path = self._task_memory_path(task_id)
         if not path.exists():
             return None
@@ -180,14 +183,14 @@ class MemoryStore:
         return payload
 
     def upsert_task_memory(self, memory: TaskMemory) -> None:
-        self.tasks_dir.mkdir(parents=True, exist_ok=True)
+        self.ensure_layout()
         self._task_memory_path(memory.task_id).write_text(
             json.dumps(memory.to_dict(), indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
 
     def append_failure(self, event: Mapping[str, Any] | dict[str, Any]) -> None:
-        self.failures_path.parent.mkdir(parents=True, exist_ok=True)
+        self.ensure_layout()
         with self.failures_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(dict(event), sort_keys=True) + "\n")
 
@@ -195,6 +198,7 @@ class MemoryStore:
         self.append_failure(kwargs)
 
     def load_recipes(self) -> list[Recipe]:
+        self.ensure_layout()
         payload = _load_json(self.recipes_path, default=[])
         if not isinstance(payload, list):
             raise ValueError("recipes.json must contain a JSON array")

@@ -1,5 +1,12 @@
 [
   {
+    "name": "cortex-heartbeat",
+    "schedule": "*/30 * * * *",
+    "command": "cd /home/matt/dev/ray && python3 -m forge.cortex.cli heartbeat --repo-root /home/matt/dev/ray >> logs/cortex-heartbeat.log 2>&1",
+    "last_run": null,
+    "last_outcome": null
+  },
+  {
     "name": "board-check",
     "schedule": "*/30 * * * *",
     "command": "cd /home/matt/dev/ray && claude --print 'Check the GitHub task board. Log results.' >> logs/board-check.log 2>&1",

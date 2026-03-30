@@ -1,0 +1,15 @@
+digraph github_task_qa {
+  label = "github-task-qa";
+  goal = "Verify the Forge MVP Cortex-to-Kinetic path is runnable";
+
+  start [shape=Mdiamond];
+
+  verify [shape=box, type="codergen",
+    label="Verify MVP pipeline",
+    prompt="Reply with exactly: FORGE MVP PIPELINE OK"];
+
+  exit [shape=Msquare];
+
+  start -> verify;
+  verify -> exit;
+}

@@ -190,7 +190,7 @@ def dispatch_attractor(
     pipeline_name: str,
     brief: dict[str, Any],
 ) -> subprocess.CompletedProcess[str]:
-    attractor = repo_root / "tools" / "attractor" / "attractor"
+    attractor = _find_attractor_executable(repo_root)
     pipeline_path = repo_root / "forge" / "pipelines" / pipeline_name
     command = [
         str(attractor),
@@ -203,6 +203,18 @@ def dispatch_attractor(
     for pair in brief_to_context_flags(brief):
         command.extend(["--context", pair])
     return subprocess.run(command, text=True, capture_output=True, check=False)
+
+
+def _find_attractor_executable(repo_root: Path) -> Path:
+    candidates = [
+        repo_root / "tools" / "attractor" / "attractor",
+        repo_root.parent / "tools" / "attractor" / "attractor",
+        repo_root.parent.parent / "tools" / "attractor" / "attractor",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
 
 
 def _now_iso() -> str:
