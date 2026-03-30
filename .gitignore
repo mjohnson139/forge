@@ -11,12 +11,16 @@ out/
 .nuxt/
 
 # Logs
-logs/
 *.log
-*.log.*
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Lens log rotation files
+logs/*.log
+logs/*.log.1
+logs/*.log.2
+logs/*.log.3
 
 # Workspaces — local project dirs, not checked in
 workspaces/
