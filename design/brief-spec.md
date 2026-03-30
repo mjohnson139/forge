@@ -8,7 +8,7 @@ A Brief is the full intelligence packet assembled by Cortex before handing off t
 
 ## Responsibilities
 
-- Aggregate task data, history, operator profile, tool health, and active overrides into one coherent packet
+- Aggregate task data, history, memory, operator profile, tool health, and active overrides into one coherent packet
 - Serve as the single handoff artifact between Cortex and Kinetic
 - Be logged to Lens for observability and auditability
 - Provide Kinetic with all context via `--context` flags at invocation time
@@ -34,6 +34,25 @@ A Brief is the full intelligence packet assembled by Cortex before handing off t
   "history": [
     "<last N relevant Lens entries for this task_id or project — summary strings>"
   ],
+  "memory": {
+    "task_memory": {
+      "last_summary": "<summary or null>",
+      "last_outcome": "<outcome or null>",
+      "open_blockers": ["<blocker>"],
+      "recent_decisions": ["<decision>"]
+    },
+    "active_run": {
+      "run_id": "<id or null>",
+      "state": "<pending | running | blocked | failed | completed | stale | null>",
+      "attempt": "<number or null>",
+      "last_error": "<summary or null>"
+    },
+    "recipe": {
+      "name": "<recipe name or null>",
+      "pipeline": "<pipeline name or null>",
+      "watchouts": ["<watchout>"]
+    }
+  },
   "operator": {
     "name":             "<operator name>",
     "timezone":         "<e.g. America/Chicago>",
@@ -60,6 +79,7 @@ A Brief is the full intelligence packet assembled by Cortex before handing off t
 |-------|--------|---------|
 | `task` | Pipeline (normalized task object) | What to work on |
 | `history` | Lens (`logs/history.jsonl`, last N entries matching `task_id`) | What has already been tried or decided |
+| `memory` | Memory (`forge/memory/`) | Mutable operational state, prior outcomes, failure context, and recipe hints |
 | `operator` | `USER.md` | How to communicate, what needs approval |
 | `tools` | Anvil health check results | What integrations are available right now |
 | `context` | Uplink `inbox.json` overrides, runtime flags | Active operator overrides (e.g., "focus on X", "skip Y") |
@@ -73,12 +93,13 @@ A Brief is the full intelligence packet assembled by Cortex before handing off t
 
 1. Cortex reads the normalized task from Pipeline
 2. Cortex queries `logs/history.jsonl` for entries where `task_id` matches or where project context is relevant — takes last N (default: 10) entries
-3. Cortex reads `USER.md` to populate the `operator` field
-4. Cortex reads Anvil health status for all active integrations
-5. Cortex reads `forge/uplink/inbox.json` for any active operator overrides (keyed by `task_id` or global)
-6. Cortex assembles the Brief struct and sets `assembled_at`
-7. Brief is serialized and logged to Lens as a single entry (`source: cortex`, `outcome: pending`)
-8. Brief is passed to Kinetic as `--context` flags (one flag per leaf value: `--context task_id=<id> --context task_title=<title> --context operator_name=<name> ...`)
+3. Cortex reads Memory to populate task-local state, active run state, and matching recipe hints
+4. Cortex reads `USER.md` to populate the `operator` field
+5. Cortex reads Anvil health status for all active integrations
+6. Cortex reads `forge/uplink/inbox.json` for any active operator overrides (keyed by `task_id` or global)
+7. Cortex assembles the Brief struct and sets `assembled_at`
+8. Brief is serialized and logged to Lens as a single entry (`source: cortex`, `outcome: pending`)
+9. Brief is passed to Kinetic as `--context` flags (one flag per leaf value: `--context task_id=<id> --context task_title=<title> --context operator_name=<name> ...`)
 
 ### Kinetic invocation with Brief
 
@@ -116,6 +137,7 @@ Long values (e.g., `task_body`) may be written to a temp file and passed as a fi
 | **Cortex** | Assembles the Brief; the only component that creates Briefs |
 | **Pipeline** | Provides the `task` field |
 | **Lens** | Provides the `history` field; receives the assembled Brief as a log entry |
+| **Memory** | Provides mutable run/task state and recipe hints for the `memory` field |
 | **USER.md** | Provides the `operator` field |
 | **Anvil** | Provides the `tools` field (health status) |
 | **Uplink** | Provides the `context` field (operator overrides via `inbox.json`) |
@@ -128,3 +150,4 @@ Long values (e.g., `task_body`) may be written to a temp file and passed as a fi
 - What is the right value of N for history entries? Default 10 — but task-specific history may need to look further back.
 - Should `task_body` be truncated if very long, or passed via temp file? Decide at Kinetic integration time.
 - Should the Brief be stored as a file (e.g., `forge/briefs/<task_id>-<timestamp>.json`) for debugging, or only exist in Lens?
+- How much recipe detail belongs in the Brief versus being resolved by Cortex before dispatch?

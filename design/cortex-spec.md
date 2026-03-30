@@ -2,13 +2,14 @@
 
 ## Overview
 
-Cortex is the control plane of Forge. It is Claude Code running in `/home/matt/dev/ray`, booted from `CLAUDE.md`. Cortex is stateless between runs — all persistent state lives in Lens logs, the task board, and external systems. It reads context files at startup, acts, and exits.
+Cortex is the control plane of Forge. It is Claude Code running in `/home/matt/dev/ray`, booted from `CLAUDE.md`. Cortex stays stateless in-process between runs, but it now depends on Memory for persistent run state, task-local summaries, failure metadata, and reusable recipes. It reads context files at startup, acts, and exits.
 
 ---
 
 ## Responsibilities
 
 - Boot and orient: load personality, operator profile, tool inventory, system design, and recent history
+- Load and update Memory for active runs, recent failures, and recipe hints
 - Check the Pipeline for actionable tasks (status: `ready` or `feedback`)
 - Assemble a Brief for each task before dispatching to Kinetic
 - Dispatch Kinetic with the Brief and an appropriate pipeline definition
@@ -24,6 +25,7 @@ Cortex is the control plane of Forge. It is Claude Code running in `/home/matt/d
 - A trigger: either an Axon cron invocation or a manual operator invocation (`claude` in the Forge directory)
 - Context files: `SOUL.md`, `USER.md`, `TOOLS.md`, `design/SYSTEM.md`
 - `logs/history.jsonl` — last 20 entries read at startup
+- `forge/memory/` — run state, task-local memory, recipes, failure events
 - `forge/uplink/inbox.json` — operator commands queued by Uplink
 - Pipeline query results — normalized task objects from the GitHub adapter
 
@@ -33,6 +35,7 @@ Cortex is the control plane of Forge. It is Claude Code running in `/home/matt/d
 - Kinetic dispatch (`npx attractor <pipeline.dot> --context ...`)
 - Uplink messages (alerts, heartbeats, human gate requests)
 - Lens entries appended to `logs/history.jsonl`
+- Memory updates for run state, failures, and task summaries
 
 ---
 
@@ -45,7 +48,8 @@ Cortex is the control plane of Forge. It is Claude Code running in `/home/matt/d
 3. Read `TOOLS.md` — load tool inventory and task board protocol
 4. Read `design/SYSTEM.md` — load full system design for orientation
 5. Read last 20 entries from `logs/history.jsonl` — understand recent state
-6. Check `forge/uplink/inbox.json` — process any queued operator commands
+6. Read `forge/memory/` — understand active runs, recent failures, and recipe hints
+7. Check `forge/uplink/inbox.json` — process any queued operator commands
 
 ### Task Loop
 
@@ -53,8 +57,10 @@ Cortex is the control plane of Forge. It is Claude Code running in `/home/matt/d
 2. For each actionable task (prioritize by `updated_at`, oldest first):
    a. Assemble a Brief (see Brief spec)
    b. Select the appropriate `.dot` pipeline definition from `workspaces/<project>/pipelines/`
-   c. Dispatch Kinetic: `npx attractor <pipeline.dot> --context task_id=<id> --context goal=<title> ...`
-   d. Log the dispatch to Lens
+   c. Write `running` state to Memory
+   d. Dispatch Kinetic: `npx attractor <pipeline.dot> --context task_id=<id> --context goal=<title> ...`
+   e. Log the dispatch to Lens
+   f. Update Memory on completion, failure, or stale detection
 3. If no actionable tasks: log a heartbeat entry to Lens and exit cleanly
 
 ### Manual Mode
@@ -72,7 +78,7 @@ When invoked directly by the operator (`claude` in the Forge directory):
 - **Never merge PRs.** The operator always merges.
 - **Never send external-facing messages without operator approval.** Uplink messages go only to the operator's private channel.
 - **Never modify crontab without operator approval.** Axon changes require explicit instruction.
-- **Stateless between runs.** Do not rely on in-memory state from a previous run. Read from files.
+- **Stateless in-process between runs.** Do not rely on Python process memory from a previous run. Persistent state must come from Lens, Memory, the task board, or external systems.
 - **Never go silent.** If stuck, report the blocker via Uplink and exit with a Lens entry describing the problem.
 - Figure it out before asking. Read the file, check the context, then act. Confirm after, not before.
 
@@ -84,6 +90,7 @@ When invoked directly by the operator (`claude` in the Forge directory):
 |-----------|-------------------|
 | **Axon** | Receives cron trigger; can request Axon registry updates |
 | **Pipeline** | Queries for ready/feedback tasks; updates task status |
+| **Memory** | Tracks run state, recent failures, task-local summaries, and recipe hints |
 | **Brief** | Assembles Brief before every Kinetic dispatch |
 | **Kinetic** | Dispatches with Brief as `--context` flags + `.dot` pipeline path |
 | **Lens** | Reads 20 recent entries at startup; appends entry after every action |
@@ -97,3 +104,4 @@ When invoked directly by the operator (`claude` in the Forge directory):
 - How should Cortex handle multiple simultaneously ready tasks — one at a time or fan-out?
 - If Kinetic is already running (previous cron still executing), should Cortex skip or queue?
 - What is the right timeout for a Kinetic run before Cortex considers it stale and alerts?
+- When should a successful repeated task be promoted into a reusable recipe automatically versus staying manual?

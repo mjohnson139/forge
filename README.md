@@ -13,6 +13,7 @@ Not a workflow builder. Not a notes app. An agent with a bias for action.
 | **Cortex** | Agent harness — instructions, personality, boot sequence |
 | **Axon** | Cron manager — heartbeat, scheduled jobs, pulse |
 | **Pipeline** | Task aggregator — fan-in from GitHub, Linear, Notion, or any source |
+| **Memory** | Persistent run state and reusable recipes for Cortex |
 | **Brief** | Context packet — assembled before execution, the smart object |
 | **Kinetic** | Task engine — powered by [Attractor](https://github.com/mjohnson139/attractor) |
 | **Lens** | Logging and observability — what it's doing, done, and planning |

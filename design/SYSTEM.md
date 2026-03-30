@@ -37,6 +37,7 @@ Not OpenClaw. OpenClaw was dumb and inert.
 | Agent harness / brain | **Cortex** | Instructions, personality, boot sequence | [cortex-spec.md](cortex-spec.md) |
 | Cron manager | **Axon** | Heartbeat, scheduled jobs, pulse | [axon-spec.md](axon-spec.md) |
 | Task surface | **Pipeline** | Pluggable task aggregator — fan-in from GitHub, Linear, Notion, Slack, or any source into a single normalized work stream | [pipeline-spec.md](pipeline-spec.md) |
+| Persistent state / recipes | **Memory** | Run state, task-local memory, failures, and reusable recipes | [memory-spec.md](memory-spec.md) |
 | Context packet | **Brief** | Assembled by Cortex before execution — task, history, operator profile, available tools, overrides | [brief-spec.md](brief-spec.md) |
 | Task engine | **Kinetic** | Receives a Brief, executes via Attractor DOT pipelines | [kinetic-spec.md](kinetic-spec.md) |
 | Logging / observability | **Lens** | What it's doing, done, and planning | [lens-spec.md](lens-spec.md) |
@@ -55,7 +56,7 @@ The control plane. Claude Code is the runtime.
 - `TOOLS.md` — tool inventory and task board protocol
 - `SYSTEM.md` — this file; living design document
 
-All behavior flows from these files. Cortex is stateless between runs — state lives in Lens logs, the task board, and external systems.
+All behavior flows from these files. Cortex stays process-stateless between runs, but it now relies on **Memory** for persistent run state, task summaries, failure metadata, and reusable recipes.
 
 ---
 
@@ -76,6 +77,25 @@ The pulse of Forge. Crons are the primary trigger mechanism.
 
 ---
 
+## 2b. Memory — Persistent State and Recipes
+
+Memory is the small persistent state layer that lets Forge recover intelligently and improve repeated work without turning the system into a heavyweight service.
+
+**What Memory stores:**
+- active and recent run state
+- task-local summaries and decisions
+- failure events and retry metadata
+- reusable recipes for common knowledge-work patterns
+
+**Why it exists:**
+- Lens is immutable history, not mutable state
+- Cortex needs to know what is already running, what got stuck, and what recipe usually works
+- Failure handling needs a writable surface for stale-run detection and retries
+
+**MVP design principle:** flat files first. Start with JSON and JSONL under `forge/memory/`. Upgrade the backend later only if the flat-file model proves insufficient.
+
+---
+
 ## 3. Lens — Logging and Observability
 
 Forge must be legible — to the operator and to itself on the next run.
@@ -93,6 +113,7 @@ Forge must be legible — to the operator and to itself on the next run.
 - Errors and anomalies flagged distinctly
 - Log rotation / size management
 - Self-readable: Cortex reads its own Lens history at startup to orient itself
+- Complementary to Memory: Lens is append-only truth; Memory is writable operational state
 
 ---
 
@@ -109,8 +130,8 @@ Forge must be legible — to the operator and to itself on the next run.
 - `--context key=value` CLI flag for seeding pipeline context at invocation
 
 **How it fits in Forge:**
-- Axon triggers a Kinetic pipeline via `attractor <workflow.dot>`
-- Cortex picks up a task from the board, selects or generates the appropriate `.dot` pipeline
+- Axon triggers Cortex on a heartbeat
+- Cortex picks up a task from the board, reads Lens + Memory, and selects the appropriate `.dot` pipeline
 - Kinetic traverses the graph — calling Claude Code, tools, or human gates as needed
 - Human gates route to Uplink for operator approval before proceeding
 - Outcomes and context updates feed into Lens logs
@@ -126,7 +147,7 @@ Forge must be legible — to the operator and to itself on the next run.
 Operator can jump in at any time to debug, tweak, or redirect.
 
 - Invoke directly via CLI: `claude` in the Forge directory
-- Cortex reads recent Lens history and task board state on entry
+- Cortex reads recent Lens history, Memory state, and task board state on entry
 - Can pause/cancel in-progress work
 - Can create ad-hoc tasks, override schedules, adjust Axon timing
 - Can trigger any Axon job immediately without waiting for schedule
@@ -243,6 +264,7 @@ Operator observability and control from anywhere.
 - [x] Uplink: Slack via Claude.ai MCP — confirmed working, no token management needed, auth handled by Claude.ai
 - [ ] Lens log retention policy: how long, how much
 - [ ] Axon cron registry format: flat file vs structured JSON
+- [ ] Memory upgrade path: when do flat files stop being enough
 - [ ] Anvil auth flow UX: how does Forge present a `gh auth login` code cleanly via Uplink
 - [ ] CXDB vs flat files for Lens — queryable history or keep it simple for now
 
