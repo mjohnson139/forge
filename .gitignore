@@ -11,7 +11,8 @@ out/
 .nuxt/
 
 # Logs
-logs/
+logs/*
+!logs/.gitkeep
 *.log
 *.log.*
 npm-debug.log*
@@ -25,8 +26,6 @@ workspaces/
 tools/attractor/
 
 # Forge runtime state — changes every run, not versioned
-forge/uplink/inbox.json
-forge/axon/registry.json
 forge/anvil/integrations.json
 .attractor/
 

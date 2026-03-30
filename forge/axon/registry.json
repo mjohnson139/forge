@@ -1,0 +1,16 @@
+[
+  {
+    "name": "board-check",
+    "schedule": "*/30 * * * *",
+    "command": "cd /home/matt/dev/ray && claude --print 'Check the GitHub task board. Log results.' >> logs/board-check.log 2>&1",
+    "last_run": null,
+    "last_outcome": null
+  },
+  {
+    "name": "silence-check",
+    "schedule": "5 * * * *",
+    "command": "cd /home/matt/dev/ray && python3 -m forge.axon.cli silence-check --repo-root /home/matt/dev/ray >> logs/silence-check.log 2>&1",
+    "last_run": null,
+    "last_outcome": null
+  }
+]
