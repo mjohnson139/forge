@@ -24,27 +24,30 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    if args.command == "validate-registry":
-        jobs = load_registry(args.registry)
-        print(f"validated {len(jobs)} jobs")
-        return 0
-    if args.command == "preview-crontab":
-        for job in load_registry(args.registry):
-            print(
-                render_crontab_line(
-                    schedule=job.schedule,
-                    job_name=job.name,
-                    command=job.command,
+    try:
+        if args.command == "validate-registry":
+            jobs = load_registry(args.registry)
+            print(f"validated {len(jobs)} jobs")
+            return 0
+        if args.command == "preview-crontab":
+            for job in load_registry(args.registry):
+                print(
+                    render_crontab_line(
+                        schedule=job.schedule,
+                        job_name=job.name,
+                        command=job.command,
+                    )
                 )
-            )
-        return 0
+            return 0
 
-    result = run_silence_check(
-        repo_root=Path(args.repo_root),
-        max_silence_minutes=args.max_silence_minutes,
-    )
-    print(result.summary)
-    return 0 if result.outcome == "success" else 1
+        result = run_silence_check(
+            repo_root=Path(args.repo_root),
+            max_silence_minutes=args.max_silence_minutes,
+        )
+        print(result.summary)
+        return 0 if result.outcome == "success" else 1
+    except ValueError as exc:
+        parser.exit(status=2, message=f"error: {exc}\n")
 
 
 if __name__ == "__main__":

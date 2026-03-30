@@ -67,6 +67,55 @@ class RegistryRuntimeTest(unittest.TestCase):
         self.assertIn(".axon-board-check.lock", line)
         self.assertIn("bash -lc", line)
 
+    def test_load_registry_rejects_duplicate_job_names(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "registry.json"
+            path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "name": "board-check",
+                            "schedule": "*/30 * * * *",
+                            "command": "echo first",
+                            "last_run": None,
+                            "last_outcome": None,
+                        },
+                        {
+                            "name": "board-check",
+                            "schedule": "5 * * * *",
+                            "command": "echo second",
+                            "last_run": None,
+                            "last_outcome": "pending",
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "duplicate job name"):
+                load_registry(path)
+
+    def test_load_registry_rejects_invalid_outcome(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "registry.json"
+            path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "name": "board-check",
+                            "schedule": "*/30 * * * *",
+                            "command": "echo board",
+                            "last_run": None,
+                            "last_outcome": "done",
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "last_outcome"):
+                load_registry(path)
+
 
 class AxonCliTest(unittest.TestCase):
     def test_validate_registry_command_exits_zero_for_valid_registry(self) -> None:
@@ -86,3 +135,37 @@ class AxonCliTest(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0)
         self.assertIn("validated", result.stdout)
+
+    def test_validate_registry_command_exits_nonzero_for_invalid_registry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            registry_path = pathlib.Path(tmp) / "registry.json"
+            registry_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "name": "board-check",
+                            "schedule": "@hourly",
+                            "command": "echo board",
+                            "last_run": None,
+                            "last_outcome": None,
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "forge.axon.cli",
+                    "validate-registry",
+                    "--registry",
+                    str(registry_path),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("schedule", result.stderr)
