@@ -1,0 +1,15 @@
+digraph smoke_test {
+  label = "smoke-test";
+  goal = "Verify Lens is recording history entries for each pipeline node";
+
+  start [shape=Mdiamond];
+
+  verify [shape=box, type="codergen",
+    label="Verify Lens active",
+    prompt="The Lens observability layer is now active. Reply with exactly: LENS OK"];
+
+  exit [shape=Msquare];
+
+  start -> verify;
+  verify -> exit;
+}
