@@ -1,0 +1,21 @@
+digraph fail_test {
+  label = "fail-test";
+  goal = "Verify Lens records failure outcomes correctly";
+
+  start [shape=Mdiamond];
+
+  attempt [shape=box, type="codergen",
+    label="Attempt failing task",
+    prompt="This task must FAIL. Reply with: FAILURE: intentional failure for lens QA"];
+
+  recover [shape=box, type="codergen",
+    label="Recover from failure",
+    prompt="Recovery complete. Reply with exactly: RECOVERED"];
+
+  exit [shape=Msquare];
+
+  start -> attempt;
+  attempt -> recover [condition="outcome=FAIL"];
+  attempt -> exit    [condition="outcome=SUCCESS"];
+  recover -> exit;
+}

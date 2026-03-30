@@ -1,0 +1,31 @@
+digraph lens_qa {
+  label = "lens-qa";
+  goal = "Full QA of the Lens observability layer — verify history entries, outcomes, and plan.md";
+
+  start [shape=Mdiamond];
+
+  success_node [shape=box, type="codergen",
+    label="Generate success entry",
+    prompt="Lens QA: success path check. Reply with exactly: SUCCESS PATH OK"];
+
+  fail_node [shape=box, type="codergen",
+    label="Generate failure entry",
+    prompt="Lens QA: FAIL path check. Reply with: FAILURE: expected failure for QA"];
+
+  recovery_node [shape=box, type="codergen",
+    label="Recovery node",
+    prompt="Lens QA: recovery confirmed. Reply with exactly: RECOVERY OK"];
+
+  final_check [shape=box, type="codergen",
+    label="Final verification",
+    prompt="Lens QA complete. Confirm history.jsonl is non-empty. Reply with exactly: LENS QA PASSED"];
+
+  exit [shape=Msquare];
+
+  start -> success_node;
+  success_node -> fail_node;
+  fail_node -> recovery_node [condition="outcome=FAIL"];
+  fail_node -> final_check   [condition="outcome=SUCCESS"];
+  recovery_node -> final_check;
+  final_check -> exit;
+}
