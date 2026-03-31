@@ -36,9 +36,16 @@ def build_failure_message(
 
 
 class SlackNotifier:
-    def __init__(self, *, repo_root: str | Path, sender: Any | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        repo_root: str | Path,
+        sender: Any | None = None,
+        memory_store: Any | None = None,
+    ) -> None:
         self.repo_root = Path(repo_root)
         self.sender = sender or _post_webhook
+        self.memory_store = memory_store
 
     def notify(self, message: str) -> bool:
         webhook_url = _resolve_webhook_url(self.repo_root)
@@ -46,6 +53,23 @@ class SlackNotifier:
             return False
         self.sender(webhook_url, {"text": message})
         return True
+
+    def notify_once(
+        self,
+        message: str,
+        run_id: str,
+        alert_type: str = "failure",
+        within_minutes: int = 30,
+    ) -> bool:
+        """Send message only if we haven't sent the same alert recently."""
+        if self.memory_store is not None and self.memory_store.has_recent_alert(
+            run_id, alert_type, within_minutes=within_minutes
+        ):
+            return False
+        sent = self.notify(message)
+        if sent and self.memory_store is not None:
+            self.memory_store.record_alert(run_id, alert_type)
+        return sent
 
 
 def _resolve_webhook_url(repo_root: Path) -> str | None:

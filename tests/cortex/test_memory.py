@@ -136,3 +136,151 @@ class MemoryStoreTest(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         self.assertEqual(json.loads(lines[0])["task_id"], "gh-9")
 
+    def test_find_stale_runs_returns_old_running_runs(self) -> None:
+        self.store.ensure_layout()
+        old_hb = "2020-01-01T00:00:00+00:00"
+        self.store.upsert_run(
+            RunRecord(
+                run_id="run-old",
+                task_id="gh-1",
+                job_name="heartbeat",
+                pipeline="github-task",
+                state="running",
+                attempt=1,
+                started_at=old_hb,
+                updated_at=old_hb,
+                last_heartbeat_at=old_hb,
+                last_error=None,
+                next_action="dispatch",
+            )
+        )
+        self.store.upsert_run(
+            RunRecord(
+                run_id="run-fresh",
+                task_id="gh-2",
+                job_name="heartbeat",
+                pipeline="github-task",
+                state="running",
+                attempt=1,
+                started_at="2099-01-01T00:00:00+00:00",
+                updated_at="2099-01-01T00:00:00+00:00",
+                last_heartbeat_at="2099-01-01T00:00:00+00:00",
+                last_error=None,
+                next_action="dispatch",
+            )
+        )
+
+        stale = self.store.find_stale_runs(threshold_minutes=60)
+
+        self.assertEqual(len(stale), 1)
+        self.assertEqual(stale[0].run_id, "run-old")
+
+    def test_find_stale_runs_ignores_non_running_states(self) -> None:
+        self.store.ensure_layout()
+        old_hb = "2020-01-01T00:00:00+00:00"
+        for state in ("completed", "failed", "stale", "skipped"):
+            self.store.upsert_run(
+                RunRecord(
+                    run_id=f"run-{state}",
+                    task_id="gh-1",
+                    job_name="heartbeat",
+                    pipeline="github-task",
+                    state=state,
+                    attempt=1,
+                    started_at=old_hb,
+                    updated_at=old_hb,
+                    last_heartbeat_at=old_hb,
+                    last_error=None,
+                    next_action="none",
+                )
+            )
+
+        stale = self.store.find_stale_runs(threshold_minutes=60)
+        self.assertEqual(stale, [])
+
+    def test_mark_run_stale_updates_state(self) -> None:
+        self.store.ensure_layout()
+        old_hb = "2020-01-01T00:00:00+00:00"
+        self.store.upsert_run(
+            RunRecord(
+                run_id="run-mark",
+                task_id="gh-3",
+                job_name="heartbeat",
+                pipeline="github-task",
+                state="running",
+                attempt=1,
+                started_at=old_hb,
+                updated_at=old_hb,
+                last_heartbeat_at=old_hb,
+                last_error=None,
+                next_action="dispatch",
+            )
+        )
+
+        self.store.mark_run_stale("run-mark")
+
+        run = self.store.get_run("run-mark")
+        self.assertEqual(run.state, "stale")
+        self.assertIn("stale", run.last_error)
+
+    def test_has_recent_alert_suppresses_duplicates(self) -> None:
+        self.store.ensure_layout()
+        run_id = "run-suppress"
+
+        self.assertFalse(self.store.has_recent_alert(run_id, "stale"))
+        self.store.record_alert(run_id, "stale")
+        self.assertTrue(self.store.has_recent_alert(run_id, "stale", within_minutes=30))
+
+    def test_has_recent_alert_different_types_do_not_collide(self) -> None:
+        self.store.ensure_layout()
+        self.store.record_alert("run-x", "stale")
+        self.assertFalse(self.store.has_recent_alert("run-x", "failure"))
+        self.assertTrue(self.store.has_recent_alert("run-x", "stale"))
+
+    def test_failure_event_count_counts_by_source(self) -> None:
+        self.store.ensure_layout()
+        self.store.append_failure_event(task_id="gh-1", run_id="r1", source="github_auth", summary="fail")
+        self.store.append_failure_event(task_id="gh-2", run_id="r2", source="github_auth", summary="fail")
+        self.store.append_failure_event(task_id="gh-3", run_id="r3", source="timeout", summary="slow")
+
+        self.assertEqual(self.store.failure_event_count("github_auth"), 2)
+        self.assertEqual(self.store.failure_event_count("timeout"), 1)
+        self.assertEqual(self.store.failure_event_count("cortex"), 0)
+
+    def test_add_recipe_watchout_appends_to_recipe(self) -> None:
+        self.store.ensure_layout()
+        self.store.write_recipes(
+            [
+                Recipe(
+                    name="github-bugfix",
+                    match_rules={"source": "github"},
+                    pipeline="github-task",
+                    watchouts=["watch for flakiness"],
+                )
+            ]
+        )
+
+        self.store.add_recipe_watchout("github-bugfix", "Repeated timeout failures: pipeline hung")
+
+        recipes = self.store.load_recipes()
+        self.assertEqual(len(recipes[0].watchouts), 2)
+        self.assertIn("Repeated timeout failures: pipeline hung", recipes[0].watchouts)
+
+    def test_add_recipe_watchout_does_not_duplicate(self) -> None:
+        self.store.ensure_layout()
+        self.store.write_recipes(
+            [
+                Recipe(
+                    name="github-bugfix",
+                    match_rules={"source": "github"},
+                    pipeline="github-task",
+                    watchouts=["already there"],
+                )
+            ]
+        )
+
+        self.store.add_recipe_watchout("github-bugfix", "already there")
+
+        recipes = self.store.load_recipes()
+        self.assertEqual(len(recipes[0].watchouts), 1)
+

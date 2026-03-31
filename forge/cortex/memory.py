@@ -129,6 +129,7 @@ class MemoryStore:
         self.tasks_dir.mkdir(parents=True, exist_ok=True)
         _ensure_json_file(self.runs_path, [])
         _ensure_json_file(self.recipes_path, [])
+        _ensure_json_file(self.suppression_path, {})
         self.failures_path.parent.mkdir(parents=True, exist_ok=True)
         self.failures_path.touch(exist_ok=True)
 
@@ -324,8 +325,124 @@ class MemoryStore:
         )
         self.upsert_task_memory(merged)
 
+    def find_stale_runs(self, threshold_minutes: int = 60) -> list[RunRecord]:
+        """Return running runs with no heartbeat update within threshold_minutes."""
+        from datetime import datetime, timezone, timedelta
+
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=threshold_minutes)
+        result: list[RunRecord] = []
+        for run in self.load_runs():
+            if run.state == "running":
+                try:
+                    hb = datetime.fromisoformat(run.last_heartbeat_at)
+                    if hb.tzinfo is None:
+                        hb = hb.replace(tzinfo=timezone.utc)
+                    if hb < cutoff:
+                        result.append(run)
+                except ValueError:
+                    pass
+        return result
+
+    def mark_run_stale(self, run_id: str) -> None:
+        run = self.get_run(run_id)
+        if run is None:
+            return
+        self.upsert_run(
+            RunRecord(
+                run_id=run.run_id,
+                task_id=run.task_id,
+                job_name=run.job_name,
+                pipeline=run.pipeline,
+                state="stale",
+                attempt=run.attempt,
+                started_at=run.started_at,
+                updated_at=_utc_now(),
+                last_heartbeat_at=run.last_heartbeat_at,
+                last_error="stale: no heartbeat update within threshold",
+                next_action="operator review",
+            )
+        )
+
+    @property
+    def suppression_path(self) -> Path:
+        return self.memory_dir / "alert_suppression.json"
+
+    def record_alert(self, run_id: str, alert_type: str = "failure") -> None:
+        suppression = self._load_suppression()
+        suppression[f"{run_id}:{alert_type}"] = _utc_now()
+        self._save_suppression(suppression)
+
+    def has_recent_alert(
+        self, run_id: str, alert_type: str = "failure", within_minutes: int = 30
+    ) -> bool:
+        from datetime import datetime, timezone, timedelta
+
+        suppression = self._load_suppression()
+        key = f"{run_id}:{alert_type}"
+        if key not in suppression:
+            return False
+        try:
+            last = datetime.fromisoformat(suppression[key])
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            return (datetime.now(timezone.utc) - last) < timedelta(minutes=within_minutes)
+        except ValueError:
+            return False
+
+    def failure_event_count(self, source: str) -> int:
+        if not self.failures_path.exists():
+            return 0
+        count = 0
+        for line in self.failures_path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                event = json.loads(line)
+                if event.get("source") == source:
+                    count += 1
+            except json.JSONDecodeError:
+                pass
+        return count
+
+    def add_recipe_watchout(self, recipe_name: str, watchout: str) -> None:
+        recipes = self.load_recipes()
+        new_recipes: list[Recipe] = []
+        for recipe in recipes:
+            if recipe.name == recipe_name:
+                watchouts = list(recipe.watchouts)
+                if watchout not in watchouts:
+                    watchouts.append(watchout)
+                new_recipes.append(
+                    Recipe(
+                        name=recipe.name,
+                        match_rules=recipe.match_rules,
+                        pipeline=recipe.pipeline,
+                        brief_context=recipe.brief_context,
+                        success_patterns=recipe.success_patterns,
+                        watchouts=watchouts,
+                    )
+                )
+            else:
+                new_recipes.append(recipe)
+        self.write_recipes(new_recipes)
+
     def _task_memory_path(self, task_id: str) -> Path:
         return self.tasks_dir / f"{_slugify(task_id)}.json"
+
+    def _load_suppression(self) -> dict[str, str]:
+        if not self.suppression_path.exists():
+            return {}
+        try:
+            data = json.loads(self.suppression_path.read_text(encoding="utf-8"))
+            return dict(data) if isinstance(data, dict) else {}
+        except (json.JSONDecodeError, ValueError):
+            return {}
+
+    def _save_suppression(self, data: dict[str, str]) -> None:
+        self.ensure_layout()
+        self.suppression_path.write_text(
+            json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
 
 
 def _ensure_json_file(path: Path, default: Any) -> None:
