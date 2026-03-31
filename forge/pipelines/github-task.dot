@@ -1,0 +1,20 @@
+digraph github_task {
+  label = "github-task";
+  goal = "Execute one GitHub-backed Forge task with Lens logging enabled";
+
+  start [shape=Mdiamond];
+
+  orient [shape=box, type="codergen",
+    label="Orient",
+    prompt="You are executing a Forge GitHub task. Read the available context and reply with exactly: TASK CONTEXT READY"];
+
+  summarize [shape=box, type="codergen",
+    label="Summarize",
+    prompt="Reply with exactly: TASK PIPELINE COMPLETE"];
+
+  exit [shape=Msquare];
+
+  start -> orient;
+  orient -> summarize;
+  summarize -> exit;
+}

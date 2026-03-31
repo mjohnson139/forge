@@ -5,6 +5,7 @@
 ## GitHub Task Board
 
 Repo: `<GITHUB_ORG>/<ISSUES_REPO>`
+Env override: `FORGE_GITHUB_TASK_REPO=<GITHUB_ORG>/<ISSUES_REPO>`
 
 ### Labels (workflow)
 | Label | Meaning | Ray's action |
@@ -66,7 +67,10 @@ Model: claude-sonnet-4-6
 
 ## Slack (Uplink)
 Notification target: `<SLACK_CHANNEL_NAME>` (channel ID: `<SLACK_CHANNEL_ID>`)
-Auth managed by Claude.ai — no local credentials needed.
+Webhook URL: `<https://hooks.slack.com/services/...>`
+Env override: `FORGE_SLACK_WEBHOOK_URL=<https://hooks.slack.com/services/...>`
+
+For scheduled Forge runs, prefer the env var or a local `TOOLS.md` webhook entry so Python cron jobs can deliver alerts without an interactive MCP session.
 
 ---
 
