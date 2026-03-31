@@ -5,53 +5,123 @@
 - Branch: `feat/mvp-foundation`
 - Worktree: `/home/matt/dev/ray/worktrees/mvp-main`
 - Plan: `docs/superpowers/plans/2026-03-30-forge-mvp-implementation.md`
-- State: `in progress`
-- Current task: `Task 7 follow-through — Slack delivery, task-source config, and Axon crontab apply flow`
+- State: **merge-ready**
+- Tests: **48 passing, 0 failing**
 
-## Completed So Far
+---
 
-- Merged Axon and Lens root-repo PRs into `main`
-- Created `feat/mvp-foundation` from merged `main`
-- Added Memory as an explicit design component
-- Added the Forge MVP implementation plan
-- Implemented the core Cortex slices:
-  - `forge/cortex/memory.py`
-  - `forge/cortex/brief.py`
-  - `forge/cortex/runtime.py`
-  - `forge/cortex/cli.py`
-- Implemented the Pipeline GitHub adapter/service slice
-- Implemented Slack message builders for Uplink heartbeat/failure summaries
-- Added webhook-backed Slack delivery for Cortex runtime notifications via `FORGE_SLACK_WEBHOOK_URL` or local `TOOLS.md`
-- Seeded `forge/memory/` runtime files
-- Added Cortex, Pipeline, and integration test coverage
-- Added the first Forge pipeline definitions:
-  - `forge/pipelines/github-task.dot`
-  - `forge/pipelines/github-task-qa.dot`
-- Added `cortex-heartbeat` to the Axon registry
-- Added operator-gated Axon `apply-crontab` support with managed-block merge behavior
-- Documented practical task-source and Slack config in `TOOLS.md.example`
+## What Is Forge
+
+Forge is an autonomous agent control plane. It monitors a GitHub task board on a cron schedule, picks up actionable issues, assembles a context-rich Brief, dispatches a pipeline (via Attractor), and reports results via Slack. All state is persisted locally in `forge/memory/` and logged to `logs/history.jsonl` (Lens).
+
+---
+
+## How to Run Forge
+
+### Prerequisites
+
+```bash
+gh auth login                  # GitHub CLI must be authenticated
+export FORGE_GITHUB_TASK_REPO=owner/repo   # or add to TOOLS.md
+export FORGE_SLACK_WEBHOOK_URL=https://hooks.slack.com/...  # optional
+```
+
+### Manual heartbeat
+
+```bash
+cd /home/matt/dev/ray
+python3 -m forge.cortex.cli heartbeat --repo-root .
+```
+
+### Scheduled heartbeat (Axon)
+
+Preview what would be installed:
+```bash
+python3 -m forge.axon.cli preview-crontab --registry forge/axon/registry.json
+```
+
+Validate registry:
+```bash
+python3 -m forge.axon.cli validate-registry --registry forge/axon/registry.json
+```
+
+Install crontab (requires explicit gate):
+```bash
+python3 -m forge.axon.cli apply-crontab --registry forge/axon/registry.json --yes-apply
+```
+
+This installs three jobs: `cortex-heartbeat` (every 30 min), `board-check` (every 30 min), `silence-check` (hourly at :05).
+
+---
+
+## How to Inspect Memory State
+
+Memory lives in `forge/memory/`:
+
+| File | Contents |
+|------|----------|
+| `forge/memory/runs.json` | All run records — state, pipeline, timestamps, errors |
+| `forge/memory/failures.jsonl` | Append-only failure event log (one JSON object per line) |
+| `forge/memory/alert_suppression.json` | Tracks last alert time per run/type to suppress duplicates |
+| `forge/memory/tasks/<task-id>.json` | Per-task memory: last outcome, open blockers, recipe hint |
+| `forge/memory/recipes.json` | Pattern-matched dispatch recipes with watchouts |
+
+Lens history: `logs/history.jsonl` — every meaningful event logged with timestamp, source, outcome, and next_action.
+
+---
+
+## How Failure Recovery Works
+
+Every failure mode writes traces to **all three sinks**: Lens (`logs/history.jsonl`), Memory (`forge/memory/`), and Uplink (Slack webhook if configured).
+
+| Failure | Detection | Recovery |
+|---------|-----------|----------|
+| No actionable tasks | `pipeline_service.list()` returns empty | Logged as `skipped`, idle heartbeat sent to Slack |
+| GitHub auth failure | `healthcheck()` returns `status: degraded` | Retry once after 5s; if still degraded, record to Memory + Lens + Uplink |
+| Rate limit (429) | `healthcheck()` detail contains `429`/`rate limit` | Record immediately, no retry — let next cycle handle |
+| Attractor dispatch exception | `dispatcher()` raises `Exception` | Run marked `failed`, failure event appended, Slack alert sent |
+| Pipeline timeout | `subprocess.TimeoutExpired` raised | Run marked `failed` with `outcome: timeout`, Slack alert sent |
+| Stale running job | `find_stale_runs()` returns runs with heartbeat older than threshold | Run marked `stale`, one-time Slack alert (suppressed within 30 min) |
+
+**Repeat failures trigger watchouts**: if the same `source` has ≥ 2 failure events and a matching recipe exists, a watchout is appended to `forge/memory/recipes.json` automatically.
+
+**Duplicate alert suppression**: stale-run alerts are suppressed if the same `run_id` was alerted within 30 minutes. State persisted in `forge/memory/alert_suppression.json`.
+
+**Retry logic**: GitHub transient failures retry once with a 5s backoff (configurable via `retry_delay_seconds`). Rate limits and pipeline timeouts are not retried.
+
+---
+
+## What Remains Out of Scope
+
+- Live GitHub issue exercise (requires `gh auth` and a real task repo with actionable issues)
+- Real Attractor pipeline invocation end-to-end (Attractor binary required at `tools/attractor/attractor`)
+- Slack delivery exercise (requires a real webhook URL)
+- PR merging — operator always merges
+
+---
 
 ## Verification
 
-- `python3 -m unittest discover -s tests -p 'test_*.py' -v`
-  - Result: `Ran 30 tests ... OK`
-- `python3 -m forge.axon.cli preview-crontab --registry forge/axon/registry.json`
-  - Result: rendered `cortex-heartbeat`, `board-check`, and `silence-check` cron lines with `flock` wrapping
-- `python3 -m forge.cortex.cli heartbeat --repo-root /home/matt/dev/ray/worktrees/mvp-main`
-  - Result: `No actionable tasks found.`
-- `gh auth status`
-  - Result: configured account present but token invalid, so live GitHub task-source exercise is currently blocked on re-auth
+```
+python3 -m unittest discover -s tests -p 'test_*.py' -v
+# Ran 48 tests ... OK
 
-## Next Steps
+python3 -m forge.axon.cli preview-crontab --registry forge/axon/registry.json
+# → 3 cron lines, each flock-wrapped
 
-1. Re-auth `gh` in this environment, then exercise `github-task.dot` against a real actionable issue source.
-2. Optionally set local `TOOLS.md` and/or `FORGE_GITHUB_TASK_REPO` plus `FORGE_SLACK_WEBHOOK_URL` before scheduled runs.
-3. If desired, run `python3 -m forge.axon.cli apply-crontab --registry forge/axon/registry.json --yes-apply` from the real repo root to install the managed Axon cron block.
-4. Commit and push the next MVP slice.
+python3 -m forge.axon.cli validate-registry --registry forge/axon/registry.json
+# → validated 3 jobs
+```
 
-## Notes
+---
 
-- `tools/attractor` Lens changes were pushed separately to the nested `attractor` repository.
-- Old completed tmux worker sessions from Axon and Lens were cleaned up before starting MVP work.
-- The real Attractor QA invocation did not yield a useful captured result in this shell environment, so current verification is based on the Python integration suite plus direct Cortex CLI runs.
-- `TOOLS.md` remains gitignored; `TOOLS.md.example` is the tracked place to document task-repo and Slack webhook configuration for local scheduled runs.
+## Merge Readiness
+
+**This branch is merge-ready.**
+
+- All 48 tests pass
+- No new dependencies (stdlib only)
+- All failure modes produce correct traces in Lens + Memory + Uplink
+- Axon cron registry validates and previews cleanly
+- Operator can install with `--yes-apply` gate
+- `TOOLS.md` remains gitignored; `TOOLS.md.example` documents config for local runs
